@@ -1,0 +1,130 @@
+[
+  {
+    "player_name": "AAA",
+    "dataset_id": "iris_2f",
+    "algorithm": "knn",
+    "params_summary": "k=3, uniform",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784310727.096125
+  },
+  {
+    "player_name": "AAA",
+    "dataset_id": "iris_2f",
+    "algorithm": "knn",
+    "params_summary": "k=8, uniform",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784310743.848683
+  },
+  {
+    "player_name": "AAA",
+    "dataset_id": "iris_2f",
+    "algorithm": "knn",
+    "params_summary": "k=15, uniform",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784310749.3512735
+  },
+  {
+    "player_name": "AAA",
+    "dataset_id": "iris_2f",
+    "algorithm": "knn",
+    "params_summary": "k=15, uniform",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784310756.392677
+  },
+  {
+    "player_name": "AAA",
+    "dataset_id": "iris_2f",
+    "algorithm": "knn",
+    "params_summary": "k=10, uniform",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784310763.9564307
+  },
+  {
+    "player_name": "MORPHEUS",
+    "dataset_id": "iris_2f",
+    "algorithm": "decision_tree",
+    "params_summary": "depth=3",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784315710.1074178
+  },
+  {
+    "player_name": "EE",
+    "dataset_id": "iris_2f",
+    "algorithm": "decision_tree",
+    "params_summary": "depth=8",
+    "test_accuracy": 0.9333,
+    "timestamp": 1784319853.7738094
+  },
+  {
+    "player_name": "TRINITY",
+    "dataset_id": "iris_2f",
+    "algorithm": "knn",
+    "params_summary": "k=9, distance",
+    "test_accuracy": 0.9111,
+    "timestamp": 1784310696.077117
+  },
+  {
+    "player_name": "AAA",
+    "dataset_id": "wine_2f",
+    "algorithm": "knn",
+    "params_summary": "k=10, uniform",
+    "test_accuracy": 0.9074,
+    "timestamp": 1784311767.2408817
+  },
+  {
+    "player_name": "NEO",
+    "dataset_id": "wine_2f",
+    "algorithm": "knn",
+    "params_summary": "k=7, uniform",
+    "test_accuracy": 0.9074,
+    "timestamp": 1784315720.0449765
+  },
+  {
+    "player_name": "EESHAAN",
+    "dataset_id": "cancer_2f",
+    "algorithm": "decision_tree",
+    "params_summary": "depth=3",
+    "test_accuracy": 0.9006,
+    "timestamp": 1784316022.3793118
+  },
+  {
+    "player_name": "AAA",
+    "dataset_id": "cancer_2f",
+    "algorithm": "knn",
+    "params_summary": "k=10, uniform",
+    "test_accuracy": 0.8947,
+    "timestamp": 1784311781.810015
+  },
+  {
+    "player_name": "EESHAAN",
+    "dataset_id": "cancer_2f",
+    "algorithm": "knn",
+    "params_summary": "k=10, uniform",
+    "test_accuracy": 0.8947,
+    "timestamp": 1784315798.5123427
+  },
+  {
+    "player_name": "EESHAAN",
+    "dataset_id": "cancer_2f",
+    "algorithm": "knn",
+    "params_summary": "k=10, uniform",
+    "test_accuracy": 0.8947,
+    "timestamp": 1784316047.3835692
+  },
+  {
+    "player_name": "EE",
+    "dataset_id": "wine_2f",
+    "algorithm": "decision_tree",
+    "params_summary": "depth=8",
+    "test_accuracy": 0.8889,
+    "timestamp": 1784319921.0791621
+  },
+  {
+    "player_name": "EE",
+    "dataset_id": "wine_2f",
+    "algorithm": "knn",
+    "params_summary": "k=9, uniform",
+    "test_accuracy": 0.8889,
+    "timestamp": 1784320014.039946
+  }
+]

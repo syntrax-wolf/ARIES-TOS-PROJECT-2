@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ARIES ML Training Playground</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>ARIES // ML TRAINING PLAYGROUND</h1>
+    <p>Pick a dataset. Train a model. Watch it learn. Beat the leaderboard.</p>
+  </header>
+
+  <div class="stepper" id="stepper">
+    <div class="step" data-step="1"><span class="dot">1</span> Learn</div>
+    <div class="step" data-step="2"><span class="dot">2</span> Setup</div>
+    <div class="step" data-step="3"><span class="dot">3</span> Train</div>
+    <div class="step" data-step="4"><span class="dot">4</span> Results</div>
+  </div>
+
+  <!-- PAGE 1 — visual-only intro -->
+  <section class="page" id="page-intro">
+    <div class="panel intro-hero">
+      <canvas id="introCanvas" width="900" height="440"></canvas>
+      <div class="intro-caption" id="introCaption"></div>
+      <p class="intro-explainer">
+        Machine learning (for classification) is the search for a mathematical function whose curve
+        best separates one category of data from another. A "smarter" model isn't magic — it's just a
+        better-fitting function. Watch the curve above reshape the boundary and repaint the classes as it changes.
+      </p>
+      <button class="train-btn" id="startBtn" style="max-width:260px;margin:18px auto 0;">▶ START</button>
+    </div>
+  </section>
+
+  <!-- PAGE 2 — dataset + algorithm + hyperparameters -->
+  <section class="page" id="page-setup">
+    <div class="layout">
+      <div class="panel">
+        <h2>Dataset</h2>
+        <select id="dataset"></select>
+        <canvas id="previewCanvas" width="260" height="230" style="margin-top:12px;"></canvas>
+        <div class="legend" id="previewLegend"></div>
+
+        <div id="dtControls" style="margin-top:8px;">
+          <label for="maxDepth">Max Depth <span class="value-chip" id="maxDepthVal">3</span></label>
+          <input type="range" id="maxDepth" min="1" max="8" value="3" />
+
+          <label for="minSplit">Min Samples to Split <span class="value-chip" id="minSplitVal">2</span></label>
+          <input type="range" id="minSplit" min="2" max="20" value="2" />
+
+          <label for="criterion">Split Criterion</label>
+          <select id="criterion">
+            <option value="gini">Gini Impurity</option>
+            <option value="entropy">Entropy</option>
+          </select>
+        </div>
+
+        <div id="knnControls" style="display:none; margin-top:8px;">
+          <label for="kNeighbors">k (neighbors) <span class="value-chip" id="kNeighborsVal">5</span></label>
+          <input type="range" id="kNeighbors" min="1" max="25" value="5" />
+
+          <label for="weights">Vote Weighting</label>
+          <select id="weights">
+            <option value="uniform">Uniform (each neighbor = 1 vote)</option>
+            <option value="distance">Distance-weighted (closer = louder vote)</option>
+          </select>
+        </div>
+
+        <label for="player">Your Initials (leaderboard)</label>
+        <input type="text" id="player" maxlength="8" value="AAA" style="text-transform:uppercase" />
+      </div>
+
+      <div class="panel">
+        <h2>Choose an Algorithm</h2>
+        <div id="tierContainer"></div>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="nav-btn" id="backToIntro">← Back</button>
+      <button class="nav-btn primary" id="toTrainBtn" disabled>▶ TRAIN MODEL</button>
+    </div>
+  </section>
+
+  <!-- PAGE 3 — live training visualization -->
+  <section class="page" id="page-train">
+    <div class="panel main">
+      <h2>Live Training Visualization</h2>
+      <div class="viz-grid">
+        <div class="viz-box">
+          <h3 id="boundaryTitle">Decision Boundary</h3>
+          <canvas id="boundaryCanvas" width="440" height="380"></canvas>
+        </div>
+        <div class="viz-box">
+          <h3 id="secondaryTitle">Tree Structure</h3>
+          <svg id="treeSvg" width="440" height="380"></svg>
+          <canvas id="radarCanvas" width="440" height="380" style="display:none;"></canvas>
+          <div id="scanReadout" class="scan-readout" style="display:none;"></div>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+
+      <div class="status-row">
+        <div>
+          <div class="accuracy-label">Test Accuracy</div>
+          <div class="accuracy-display" id="accuracyDisplay">--%</div>
+        </div>
+        <div class="depth-indicator" id="depthIndicator">Step: --</div>
+      </div>
+
+      <div class="console-panel" id="consolePanel">
+        <div class="console-header">⚡ LIVE COMPUTATION</div>
+        <div class="console-body" id="consoleBody"></div>
+      </div>
+
+      <div class="advice-cards" id="adviceCards"></div>
+    </div>
+    <div class="nav-row">
+      <button class="nav-btn" id="backToSetup">← Back</button>
+      <button class="nav-btn primary" id="toResultsBtn" disabled>See Results ▶</button>
+    </div>
+  </section>
+
+  <!-- PAGE 4 — leaderboard + final boundary + random point -->
+  <section class="page" id="page-results">
+    <div class="panel result-hero">
+      <div class="accuracy-label">Final Test Accuracy</div>
+      <div class="big-acc" id="finalAcc">--%</div>
+      <div class="rank-line" id="rankLine"></div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <h2>Final Decision Boundary</h2>
+        <canvas id="resultCanvas" width="420" height="380" style="cursor:crosshair;"></canvas>
+        <div class="radar-hint">Click anywhere to drop a query point and watch it get classified</div>
+        <button class="scan-btn random-point-btn" id="randomPointBtn">🎲 DROP RANDOM POINT</button>
+        <div id="randomPointReadout" class="scan-readout"></div>
+      </div>
+
+      <div class="panel">
+        <h2>🏆 Leaderboard</h2>
+        <table class="leaderboard">
+          <thead><tr><th>#</th><th>Player</th><th>Dataset</th><th>Algorithm</th><th>Params</th><th>Accuracy</th></tr></thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button class="nav-btn" id="restartTutorial">↺ Restart Tutorial</button>
+      <button class="nav-btn primary" id="playAgainBtn">🔁 PLAY AGAIN</button>
+    </div>
+  </section>
+
+  <p class="footer-note">ARIES — Artificial Intelligence Society, IIT Delhi</p>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
