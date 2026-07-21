@@ -6,21 +6,13 @@ export type Page = "select" | "hyperparams" | "animation" | "results";
 export type AlgorithmId = "decision-tree" | "random-forest" | "logistic-regression" | "knn" | "svm" | "neural-net";
 
 export const DEFAULT_DATASET_CONFIG: DatasetConfig = {
-  shape: "moons",
-  noise: 0.25,
-  samples: 320,
-  testSize: 0.25,
+  samples: 1200,
+  testSize: 0.2,
   seed: 42,
 };
 
 export const DEFAULT_HYPERPARAMS: TreeHyperparams = {
-  criterion: "gini",
-  splitter: "best",
-  maxDepth: 5,
-  minSamplesSplit: 2,
-  minSamplesLeaf: 3,
-  minImpurityDecrease: 0,
-  maxLeafNodes: null,
+  maxDepth: 6,
 };
 
 interface SylvaState {
@@ -31,13 +23,14 @@ interface SylvaState {
   dataset: Dataset | null;
   tree: TrainedTree | null;
   trainedAt: number | null;
+  isTraining: boolean;
 
   setPage: (page: Page) => void;
   selectAlgorithm: (algorithm: AlgorithmId) => void;
   updateDatasetConfig: (partial: Partial<DatasetConfig>) => void;
   updateHyperparams: (partial: Partial<TreeHyperparams>) => void;
   regenerateSeed: () => void;
-  runTraining: () => void;
+  runTraining: () => Promise<void>;
   restart: () => void;
 }
 
@@ -49,6 +42,7 @@ export const useSylvaStore = create<SylvaState>((set, get) => ({
   dataset: null,
   tree: null,
   trainedAt: null,
+  isTraining: false,
 
   setPage: (page) => set({ page }),
 
@@ -61,11 +55,12 @@ export const useSylvaStore = create<SylvaState>((set, get) => ({
   regenerateSeed: () =>
     set({ datasetConfig: { ...get().datasetConfig, seed: Math.floor(get().datasetConfig.seed * 9301 + 49297) % 233280 } }),
 
-  runTraining: () => {
+  runTraining: async () => {
+    set({ isTraining: true });
     const { datasetConfig, hyperparams } = get();
-    const dataset = generateDataset(datasetConfig);
-    const tree = trainDecisionTree(dataset.train, hyperparams, datasetConfig.seed);
-    set({ dataset, tree, trainedAt: datasetConfig.seed, page: "animation" });
+    const dataset = await generateDataset(datasetConfig);
+    const tree = trainDecisionTree(dataset.train, hyperparams);
+    set({ dataset, tree, trainedAt: datasetConfig.seed, page: "animation", isTraining: false });
   },
 
   restart: () =>

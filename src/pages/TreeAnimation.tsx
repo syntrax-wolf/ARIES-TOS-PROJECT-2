@@ -4,6 +4,7 @@ import { useSylvaStore } from "../state/store";
 import { bfsOrder, type TreeNode } from "../lib/decisionTree";
 import { layoutTree, generateRootSystem } from "../lib/layout";
 import { classColor } from "../lib/palette";
+import { averageImage, pixelsToDataUrl, RAW_SIZE } from "../lib/mnist";
 
 const MARGIN_X = 70;
 const LEVEL_HEIGHT = 92;
@@ -21,6 +22,17 @@ export function TreeAnimation() {
 
   const nodes = useMemo(() => (tree ? bfsOrder(tree.root) : []), [tree]);
   const layout = useMemo(() => (tree ? layoutTree(tree.root) : null), [tree]);
+
+  // a blurry "prototype" thumbnail per leaf — the average of every training digit that landed there
+  const leafThumbnails = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const n of nodes) {
+      if (!n.isLeaf) continue;
+      const avg = averageImage(n.points.map((p) => p.raw));
+      map.set(n.id, pixelsToDataUrl(avg, RAW_SIZE, 2));
+    }
+    return map;
+  }, [nodes]);
 
   const geometry = useMemo(() => {
     if (!tree || !layout) return null;
@@ -208,20 +220,35 @@ export function TreeAnimation() {
               if (n.isLeaf) {
                 const total = Object.values(n.classCounts).reduce((a, b) => a + b, 0);
                 const purity = total ? (n.classCounts[n.prediction] ?? 0) / total : 1;
-                const r = 7 + purity * 3.5;
+                const r = 12 + purity * 6;
+                const thumb = leafThumbnails.get(n.id);
                 return (
-                  <motion.circle
+                  <motion.g
                     key={`node-${n.id}`}
-                    cx={p.x}
-                    cy={p.y}
-                    r={r}
-                    fill={classColor(n.prediction)}
-                    filter="url(#leafShadow)"
                     initial={{ scale: 0, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ duration: 0.4, delay: perLevel * 0.35, ease: "backOut" }}
                     style={{ transformOrigin: `${p.x}px ${p.y}px` }}
-                  />
+                  >
+                    <circle cx={p.x} cy={p.y} r={r + 2} fill={classColor(n.prediction)} filter="url(#leafShadow)" />
+                    <circle cx={p.x} cy={p.y} r={r} fill="#ffffff" />
+                    {thumb && (
+                      <>
+                        <clipPath id={`leaf-clip-${n.id}`}>
+                          <circle cx={p.x} cy={p.y} r={r} />
+                        </clipPath>
+                        <image
+                          href={thumb}
+                          x={p.x - r}
+                          y={p.y - r}
+                          width={r * 2}
+                          height={r * 2}
+                          clipPath={`url(#leaf-clip-${n.id})`}
+                          style={{ imageRendering: "pixelated" }}
+                        />
+                      </>
+                    )}
+                  </motion.g>
                 );
               }
               return (

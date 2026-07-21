@@ -24,7 +24,7 @@ const ALGORITHMS: AlgorithmDef[] = [
   {
     id: "decision-tree",
     name: "Decision Tree",
-    description: "Watch a tree recursively split the data into purer and purer regions.",
+    description: "Watch a tree recursively split pixels to recognize handwritten digits.",
     available: true,
     icon: (
       <Icon>
@@ -115,7 +115,7 @@ export function AlgorithmSelect() {
         <div className="mb-12 text-center">
           <h1 className="text-4xl text-ink sm:text-[42px]">Choose an algorithm to explore</h1>
           <p className="mx-auto mt-3 max-w-xl text-[17px] leading-relaxed text-ink-soft">
-            Pick a model, tune how it learns, then watch it train step by step on data you control.
+            Pick a model, tune how it learns, then watch it train step by step on handwritten digits.
           </p>
         </div>
 

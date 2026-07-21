@@ -2,7 +2,6 @@ export interface LeaderboardEntry {
   id: string;
   timestamp: number;
   algorithm: string;
-  datasetShape: string;
   accuracy: number;
   macroF1: number;
   depth: number;
