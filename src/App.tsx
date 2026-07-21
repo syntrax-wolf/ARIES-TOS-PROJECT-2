@@ -3,10 +3,12 @@ import { useSylvaStore } from "./state/store";
 import { AlgorithmSelect } from "./pages/AlgorithmSelect";
 import { Hyperparameters } from "./pages/Hyperparameters";
 import { TreeAnimation } from "./pages/TreeAnimation";
+import { ForestAnimation } from "./pages/ForestAnimation";
 import { Results } from "./pages/Results";
 
 function App() {
   const page = useSylvaStore((s) => s.page);
+  const algorithm = useSylvaStore((s) => s.algorithm);
 
   return (
     <AnimatePresence mode="wait">
@@ -19,7 +21,7 @@ function App() {
       >
         {page === "select" && <AlgorithmSelect />}
         {page === "hyperparams" && <Hyperparameters />}
-        {page === "animation" && <TreeAnimation />}
+        {page === "animation" && (algorithm === "random-forest" ? <ForestAnimation /> : <TreeAnimation />)}
         {page === "results" && <Results />}
       </motion.div>
     </AnimatePresence>

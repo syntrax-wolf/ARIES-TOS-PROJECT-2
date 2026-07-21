@@ -1,34 +1,39 @@
 import { create } from "zustand";
 import { generateDataset, type Dataset, type DatasetConfig } from "../lib/dataset";
-import { trainDecisionTree, type TrainedTree, type TreeHyperparams } from "../lib/decisionTree";
+import { trainDecisionTree, type TrainedTree } from "../lib/decisionTree";
+import { trainRandomForest, type TrainedForest } from "../lib/randomForest";
 
 export type Page = "select" | "hyperparams" | "animation" | "results";
 export type AlgorithmId = "decision-tree" | "random-forest" | "logistic-regression" | "knn" | "svm" | "neural-net";
 
+export interface Hyperparams {
+  maxDepth: number;
+  numTrees: number; // only used by random forest
+}
+
 export const DEFAULT_DATASET_CONFIG: DatasetConfig = {
-  samples: 1200,
-  testSize: 0.2,
   seed: 42,
 };
 
-export const DEFAULT_HYPERPARAMS: TreeHyperparams = {
+export const DEFAULT_HYPERPARAMS: Hyperparams = {
   maxDepth: 6,
+  numTrees: 5,
 };
 
 interface SylvaState {
   page: Page;
   algorithm: AlgorithmId | null;
   datasetConfig: DatasetConfig;
-  hyperparams: TreeHyperparams;
+  hyperparams: Hyperparams;
   dataset: Dataset | null;
   tree: TrainedTree | null;
+  forest: TrainedForest | null;
   trainedAt: number | null;
   isTraining: boolean;
 
   setPage: (page: Page) => void;
   selectAlgorithm: (algorithm: AlgorithmId) => void;
-  updateDatasetConfig: (partial: Partial<DatasetConfig>) => void;
-  updateHyperparams: (partial: Partial<TreeHyperparams>) => void;
+  updateHyperparams: (partial: Partial<Hyperparams>) => void;
   regenerateSeed: () => void;
   runTraining: () => Promise<void>;
   restart: () => void;
@@ -41,14 +46,13 @@ export const useSylvaStore = create<SylvaState>((set, get) => ({
   hyperparams: DEFAULT_HYPERPARAMS,
   dataset: null,
   tree: null,
+  forest: null,
   trainedAt: null,
   isTraining: false,
 
   setPage: (page) => set({ page }),
 
   selectAlgorithm: (algorithm) => set({ algorithm, page: "hyperparams" }),
-
-  updateDatasetConfig: (partial) => set({ datasetConfig: { ...get().datasetConfig, ...partial } }),
 
   updateHyperparams: (partial) => set({ hyperparams: { ...get().hyperparams, ...partial } }),
 
@@ -57,10 +61,16 @@ export const useSylvaStore = create<SylvaState>((set, get) => ({
 
   runTraining: async () => {
     set({ isTraining: true });
-    const { datasetConfig, hyperparams } = get();
+    const { datasetConfig, hyperparams, algorithm } = get();
     const dataset = await generateDataset(datasetConfig);
-    const tree = trainDecisionTree(dataset.train, hyperparams);
-    set({ dataset, tree, trainedAt: datasetConfig.seed, page: "animation", isTraining: false });
+
+    if (algorithm === "random-forest") {
+      const forest = trainRandomForest(dataset.train, hyperparams, datasetConfig.seed);
+      set({ dataset, forest, tree: null, trainedAt: datasetConfig.seed, page: "animation", isTraining: false });
+    } else {
+      const tree = trainDecisionTree(dataset.train, { maxDepth: hyperparams.maxDepth });
+      set({ dataset, tree, forest: null, trainedAt: datasetConfig.seed, page: "animation", isTraining: false });
+    }
   },
 
   restart: () =>
@@ -69,6 +79,7 @@ export const useSylvaStore = create<SylvaState>((set, get) => ({
       algorithm: null,
       dataset: null,
       tree: null,
+      forest: null,
       trainedAt: null,
     }),
 }));

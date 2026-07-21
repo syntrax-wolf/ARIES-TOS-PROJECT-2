@@ -1,8 +1,12 @@
 import { downsampleImage, getRawImage, loadMnistRaw, NUM_CLASSES } from "./mnist";
+import { makeRng } from "./rng";
+
+// Fixed dataset size — keeps the experience predictable and focused on the
+// hyperparameters, rather than adding a second axis of variation.
+export const STANDARD_SAMPLES = 1200;
+export const STANDARD_TEST_SIZE = 0.2;
 
 export interface DatasetConfig {
-  samples: number; // total subset size (train + test), drawn from the bundled MNIST pool
-  testSize: number; // 0.1 - 0.5
   seed: number;
 }
 
@@ -18,21 +22,10 @@ export interface Dataset {
   classes: number[];
 }
 
-function makeRng(seed: number) {
-  let a = seed >>> 0;
-  return function rng() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 export async function generateDataset(config: DatasetConfig): Promise<Dataset> {
   const raw = await loadMnistRaw();
   const rng = makeRng(config.seed);
-  const n = Math.min(config.samples, raw.count);
+  const n = Math.min(STANDARD_SAMPLES, raw.count);
 
   const indices = Array.from({ length: raw.count }, (_, i) => i);
   for (let i = indices.length - 1; i > 0; i--) {
@@ -45,7 +38,7 @@ export async function generateDataset(config: DatasetConfig): Promise<Dataset> {
     return { features: downsampleImage(rawImage), raw: rawImage, label: raw.labels[idx] };
   });
 
-  const testCount = Math.round(n * config.testSize);
+  const testCount = Math.round(n * STANDARD_TEST_SIZE);
   const test = points.slice(0, testCount);
   const train = points.slice(testCount);
   const classes = Array.from({ length: NUM_CLASSES }, (_, i) => i);

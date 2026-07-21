@@ -119,16 +119,26 @@ function bestSplitForFeature(points: Point[], featureIndex: number, parentImpuri
   return best;
 }
 
-function findBestSplit(points: Point[], parentImpurity: number): SplitCandidate | null {
-  const numFeatures = points[0]?.features.length ?? 0;
+function findBestSplit(points: Point[], parentImpurity: number, featureIndices: number[]): SplitCandidate | null {
   let best: SplitCandidate | null = null;
-  for (let f = 0; f < numFeatures; f++) {
+  for (const f of featureIndices) {
     const candidate = bestSplitForFeature(points, f, parentImpurity);
     if (candidate && (best === null || candidate.impurityDecrease > best.impurityDecrease)) {
       best = candidate;
     }
   }
   return best;
+}
+
+/** Fisher-Yates partial shuffle — used by random forest to pick a random feature subset per split. */
+function sampleFeatureIndices(numFeatures: number, k: number, rng: () => number): number[] {
+  const pool = Array.from({ length: numFeatures }, (_, i) => i);
+  const count = Math.min(k, numFeatures);
+  for (let i = 0; i < count; i++) {
+    const j = i + Math.floor(rng() * (numFeatures - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
 }
 
 function partition(points: Point[], featureIndex: number, threshold: number): [Point[], Point[]] {
@@ -140,14 +150,21 @@ function partition(points: Point[], featureIndex: number, threshold: number): [P
   return [left, right];
 }
 
+export interface TrainOptions {
+  /** Random forest only: consider a fresh random subset of this many features at every split. */
+  featureSubsetSize?: number;
+  rng?: () => number;
+}
+
 /**
  * Best-first tree growth: at each step, expand the frontier leaf whose
  * candidate split yields the largest impurity decrease. Growth stops only on
  * max depth, purity, or running out of valid splits — there's no leaf-count
  * cap since max depth is the only exposed control.
  */
-export function trainDecisionTree(points: Point[], params: TreeHyperparams): TrainedTree {
+export function trainDecisionTree(points: Point[], params: TreeHyperparams, options?: TrainOptions): TrainedTree {
   let nextId = 0;
+  const numFeatures = points[0]?.features.length ?? 0;
 
   function makeNode(pts: Point[], depth: number, parentId: number | null): TreeNode {
     const counts = classCounts(pts);
@@ -181,7 +198,11 @@ export function trainDecisionTree(points: Point[], params: TreeHyperparams): Tra
       permanentLeaves.add(node.id);
       return;
     }
-    const candidate = findBestSplit(node.points, node.impurity);
+    const featureIndices =
+      options?.featureSubsetSize && options.rng
+        ? sampleFeatureIndices(numFeatures, options.featureSubsetSize, options.rng)
+        : Array.from({ length: numFeatures }, (_, i) => i);
+    const candidate = findBestSplit(node.points, node.impurity, featureIndices);
     if (!candidate || candidate.impurityDecrease <= 1e-9) {
       permanentLeaves.add(node.id);
       return;

@@ -43,8 +43,8 @@ function DatasetPreview() {
 }
 
 export function Hyperparameters() {
-  const { datasetConfig, hyperparams, updateDatasetConfig, updateHyperparams, regenerateSeed, runTraining, setPage, isTraining } =
-    useSylvaStore();
+  const { algorithm, hyperparams, updateHyperparams, regenerateSeed, runTraining, setPage, isTraining } = useSylvaStore();
+  const isForest = algorithm === "random-forest";
 
   return (
     <div className="min-h-screen">
@@ -52,56 +52,58 @@ export function Hyperparameters() {
 
       <main className="mx-auto max-w-4xl px-6 pb-28 pt-2 sm:px-8">
         <div className="mb-10 text-center">
-          <h1 className="text-4xl text-ink sm:text-[38px]">Configure your decision tree</h1>
+          <h1 className="text-4xl text-ink sm:text-[38px]">
+            Configure your {isForest ? "random forest" : "decision tree"}
+          </h1>
           <p className="mx-auto mt-3 max-w-xl text-[17px] leading-relaxed text-ink-soft">
-            It will learn to recognize handwritten digits from the MNIST dataset. Choose how much data to show it,
-            and how deep it's allowed to grow.
+            {isForest
+              ? "A forest of trees will each learn from a random slice of the MNIST digits, then vote on the answer."
+              : "It will learn to recognize handwritten digits from the MNIST dataset."}{" "}
+            Choose how it's allowed to grow.
           </p>
         </div>
 
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_1fr]">
           <Card className="p-6 sm:p-7">
             <h2 className="mb-1 text-lg font-semibold text-ink">Dataset</h2>
-            <p className="mb-5 text-sm text-ink-soft">A sample of real handwritten digits, 0 through 9.</p>
+            <p className="mb-5 text-sm text-ink-soft">A standard sample of real handwritten digits, 0 through 9.</p>
             <div className="mb-6">
               <DatasetPreview />
             </div>
-            <div className="space-y-6">
-              <Slider
-                label="Samples"
-                value={datasetConfig.samples}
-                min={200}
-                max={4000}
-                step={100}
-                onChange={(samples) => updateDatasetConfig({ samples })}
-              />
-              <Slider
-                label="Test split"
-                value={datasetConfig.testSize}
-                min={0.1}
-                max={0.5}
-                step={0.05}
-                formatValue={(v) => `${Math.round(v * 100)}%`}
-                onChange={(testSize) => updateDatasetConfig({ testSize })}
-                hint="Held out to score the tree after training."
-              />
-              <Button variant="secondary" size="md" onClick={regenerateSeed} className="w-full">
-                Shuffle new sample
-              </Button>
-            </div>
+            <Button variant="secondary" size="md" onClick={regenerateSeed} className="w-full">
+              Shuffle new sample
+            </Button>
           </Card>
 
           <Card className="p-6 sm:p-7">
-            <h2 className="mb-1 text-lg font-semibold text-ink">Hyperparameter</h2>
-            <p className="mb-5 text-sm text-ink-soft">The one dial that matters most for a decision tree.</p>
-            <Slider
-              label="Max depth"
-              value={hyperparams.maxDepth}
-              min={1}
-              max={15}
-              onChange={(maxDepth) => updateHyperparams({ maxDepth })}
-              hint="How many questions deep the tree can go. Shallow trees generalize better; deep trees can memorize the training digits too closely."
-            />
+            <h2 className="mb-1 text-lg font-semibold text-ink">Hyperparameter{isForest ? "s" : ""}</h2>
+            <p className="mb-5 text-sm text-ink-soft">
+              {isForest ? "The two dials that matter most for a forest." : "The one dial that matters most for a decision tree."}
+            </p>
+            <div className="space-y-6">
+              {isForest && (
+                <Slider
+                  label="Number of trees"
+                  value={hyperparams.numTrees}
+                  min={3}
+                  max={9}
+                  onChange={(numTrees) => updateHyperparams({ numTrees })}
+                  hint="More trees vote together, which usually smooths out mistakes any single tree would make."
+                />
+              )}
+              <Slider
+                label="Max depth"
+                value={hyperparams.maxDepth}
+                min={1}
+                max={15}
+                onChange={(maxDepth) => updateHyperparams({ maxDepth })}
+                hint={
+                  isForest
+                    ? "How many questions deep each tree in the forest can go."
+                    : "How many questions deep the tree can go. Shallow trees generalize better; deep trees can memorize the training digits too closely."
+                }
+              />
+            </div>
           </Card>
         </div>
 
@@ -110,7 +112,7 @@ export function Hyperparameters() {
             ← Back
           </Button>
           <Button variant="primary" size="lg" onClick={runTraining} disabled={isTraining}>
-            {isTraining ? "Training…" : "Train & grow tree"}
+            {isTraining ? "Training…" : `Train & grow ${isForest ? "forest" : "tree"}`}
           </Button>
         </div>
       </main>

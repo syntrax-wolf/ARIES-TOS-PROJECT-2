@@ -36,8 +36,8 @@ const ALGORITHMS: AlgorithmDef[] = [
   {
     id: "random-forest",
     name: "Random Forest",
-    description: "An ensemble of decision trees voting together.",
-    available: false,
+    description: "Many trees, each grown on a random slice of the digits, voting together.",
+    available: true,
     icon: (
       <Icon>
         <path d="M10 34V20M10 20l-4 6M10 20l4 6M20 34V16M20 16l-5 7M20 16l5 7M30 34V22M30 22l-4 6M30 22l4 6" />
