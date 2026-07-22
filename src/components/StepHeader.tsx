@@ -29,7 +29,7 @@ export function StepHeader({ step }: { step: number }) {
     <header className="flex items-center justify-between px-8 py-6 sm:px-12">
       <div className="flex items-center gap-2 text-brand-dark">
         <Logomark className="h-6 w-6" />
-        <span className="font-serif text-lg font-semibold tracking-tight">Sylva</span>
+        <span className="font-serif text-lg font-semibold tracking-tight">ARIES</span>
       </div>
 
       <ol className="flex items-center gap-2 sm:gap-3">
