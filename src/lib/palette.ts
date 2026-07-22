@@ -28,3 +28,18 @@ export function heatColor(t: number): string {
   const b = Math.round(b1 + (b2 - b1) * clamped);
   return `rgb(${r}, ${g}, ${b})`;
 }
+
+const DIVERGE_NEUTRAL: [number, number, number] = [0xf4, 0xef, 0xe4];
+const DIVERGE_POS: [number, number, number] = [0x2f, 0x6b, 0x4f];
+const DIVERGE_NEG: [number, number, number] = [0xc0, 0x7a, 0x3e];
+
+/** Diverging scale for signed values (e.g. neural network weights), t in [-1,1]. */
+export function weightColor(t: number): string {
+  const clamped = Math.max(-1, Math.min(1, t));
+  const target = clamped >= 0 ? DIVERGE_POS : DIVERGE_NEG;
+  const frac = Math.abs(clamped);
+  const r = Math.round(DIVERGE_NEUTRAL[0] + (target[0] - DIVERGE_NEUTRAL[0]) * frac);
+  const g = Math.round(DIVERGE_NEUTRAL[1] + (target[1] - DIVERGE_NEUTRAL[1]) * frac);
+  const b = Math.round(DIVERGE_NEUTRAL[2] + (target[2] - DIVERGE_NEUTRAL[2]) * frac);
+  return `rgb(${r}, ${g}, ${b})`;
+}

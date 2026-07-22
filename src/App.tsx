@@ -4,6 +4,10 @@ import { AlgorithmSelect } from "./pages/AlgorithmSelect";
 import { Hyperparameters } from "./pages/Hyperparameters";
 import { TreeAnimation } from "./pages/TreeAnimation";
 import { ForestAnimation } from "./pages/ForestAnimation";
+import { NeuralNetworkAnimation } from "./pages/NeuralNetworkAnimation";
+import { KnnAnimation } from "./pages/KnnAnimation";
+import { GradientBoostingAnimation } from "./pages/GradientBoostingAnimation";
+import { CnnAnimation } from "./pages/CnnAnimation";
 import { Results } from "./pages/Results";
 
 function App() {
@@ -21,7 +25,20 @@ function App() {
       >
         {page === "select" && <AlgorithmSelect />}
         {page === "hyperparams" && <Hyperparameters />}
-        {page === "animation" && (algorithm === "random-forest" ? <ForestAnimation /> : <TreeAnimation />)}
+        {page === "animation" &&
+          (algorithm === "random-forest" ? (
+            <ForestAnimation />
+          ) : algorithm === "neural-net" ? (
+            <NeuralNetworkAnimation />
+          ) : algorithm === "knn" ? (
+            <KnnAnimation />
+          ) : algorithm === "gradient-boosting" ? (
+            <GradientBoostingAnimation />
+          ) : algorithm === "cnn" ? (
+            <CnnAnimation />
+          ) : (
+            <TreeAnimation />
+          ))}
         {page === "results" && <Results />}
       </motion.div>
     </AnimatePresence>

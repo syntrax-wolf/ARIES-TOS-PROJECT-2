@@ -2,17 +2,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { StepHeader } from "../components/StepHeader";
 import { Card } from "../components/Card";
 import { Button } from "../components/Button";
-import { useSylvaStore } from "../state/store";
+import { useSylvaStore, UNRATED_ALGORITHMS } from "../state/store";
 import { featureImportance, predict } from "../lib/decisionTree";
 import type { Point } from "../lib/dataset";
 import { forestFeatureImportance, predictForest } from "../lib/randomForest";
+import { predict as predictNetwork, type TrainedNetwork } from "../lib/neuralNetwork";
+import { kNearest, predict as predictKnn, type TrainedKnn } from "../lib/knn";
+import { boostingFeatureImportance, predictBoosting, LEARNER_MAX_DEPTH } from "../lib/gradientBoosting";
+import { predictCnn, type CnnWeights } from "../lib/cnn";
 import { evaluate } from "../lib/metrics";
-import { heatColor } from "../lib/palette";
+import { classColor, heatColor, weightColor } from "../lib/palette";
 import { pixelsToDataUrl, FEATURE_PIXELS, FEATURE_SIZE, RAW_SIZE } from "../lib/mnist";
 import { addLeaderboardEntry, getLeaderboard, rankOf, type LeaderboardEntry } from "../lib/leaderboard";
 
 const HEAT_CELL = 20;
 const GALLERY_COUNT = 12;
+const FIELD_CELL = 4;
 
 function PixelHeatmap({ importance }: { importance: Float64Array }) {
   const size = FEATURE_SIZE * HEAT_CELL;
@@ -27,6 +32,90 @@ function PixelHeatmap({ importance }: { importance: Float64Array }) {
         })
       )}
     </svg>
+  );
+}
+
+/** Each hidden neuron's incoming weight vector, reshaped back into a 14x14 grid — a little "what pattern fires this unit" filter. */
+function ReceptiveFields({ network }: { network: TrainedNetwork }) {
+  const layer0 = network.snapshots[network.snapshots.length - 1].layers[0];
+  const inputSize = network.layerSizes[0];
+  const hiddenCount = network.layerSizes[1];
+  const size = FEATURE_SIZE * FIELD_CELL;
+
+  const maxAbs = useMemo(() => {
+    let m = 1e-9;
+    for (let i = 0; i < inputSize; i++) for (let j = 0; j < hiddenCount; j++) m = Math.max(m, Math.abs(layer0.W[i][j]));
+    return m;
+  }, [layer0, inputSize, hiddenCount]);
+
+  return (
+    <div className="grid grid-cols-4 gap-2">
+      {Array.from({ length: hiddenCount }).map((_, j) => (
+        <svg key={j} viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="rounded-md border border-border-soft">
+          {Array.from({ length: FEATURE_SIZE }).map((_, row) =>
+            Array.from({ length: FEATURE_SIZE }).map((_, col) => {
+              const i = row * FEATURE_SIZE + col;
+              const w = layer0.W[i][j] / maxAbs;
+              return <rect key={`${row}-${col}`} x={col * FIELD_CELL} y={row * FIELD_CELL} width={FIELD_CELL} height={FIELD_CELL} fill={weightColor(w)} />;
+            })
+          )}
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+/** One example digit alongside the k training images it matched most closely — KNN's "reasoning" made visible. */
+function NearestNeighborsPanel({ knn, example }: { knn: TrainedKnn; example: Point }) {
+  const neighbors = useMemo(() => kNearest(knn, example.features, knn.k), [knn, example]);
+  const queryThumb = useMemo(() => pixelsToDataUrl(example.raw, RAW_SIZE, 2), [example]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-5">
+      <div className="flex flex-col items-center gap-1.5">
+        <img src={queryThumb} alt="" className="h-16 w-16 rounded-full" style={{ boxShadow: "0 0 0 3px #2f6b4f" }} />
+        <span className="text-[11px] font-medium text-ink-faint">query</span>
+      </div>
+      <div className="grid grid-cols-5 gap-2.5">
+        {neighbors.map((n, i) => (
+          <div key={i} className="flex flex-col items-center gap-1">
+            <img
+              src={pixelsToDataUrl(n.point.raw, RAW_SIZE, 2)}
+              alt=""
+              className="h-12 w-12 rounded-full"
+              style={{ boxShadow: `0 0 0 2px ${classColor(n.point.label)}` }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const FILTER_CELL = 13;
+
+/** The CNN's own first-layer filters — literally the weights it slides across every digit, not a stand-in visualization. */
+function CnnFilters({ weights }: { weights: CnnWeights }) {
+  const filters = weights.conv1.filters; // [numFilters][3][3][1]
+  const maxAbs = useMemo(() => {
+    let m = 1e-9;
+    for (const f of filters) for (const row of f) for (const cell of row) m = Math.max(m, Math.abs(cell[0]));
+    return m;
+  }, [filters]);
+  const size = 3 * FILTER_CELL;
+
+  return (
+    <div className="flex flex-wrap gap-3">
+      {filters.map((f, fi) => (
+        <svg key={fi} viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="rounded-md border border-border-soft">
+          {f.map((row, r) =>
+            row.map((cell, c) => (
+              <rect key={`${r}-${c}`} x={c * FILTER_CELL} y={r * FILTER_CELL} width={FILTER_CELL} height={FILTER_CELL} fill={weightColor(cell[0] / maxAbs)} />
+            ))
+          )}
+        </svg>
+      ))}
+    </div>
   );
 }
 
@@ -64,33 +153,60 @@ function SampleGallery({ predictOne }: { predictOne: (p: Point) => number }) {
   );
 }
 
+type Kind = "tree" | "forest" | "network" | "knn" | "boosting" | "cnn";
+
 export function Results() {
   const algorithm = useSylvaStore((s) => s.algorithm);
   const dataset = useSylvaStore((s) => s.dataset);
   const tree = useSylvaStore((s) => s.tree);
   const forest = useSylvaStore((s) => s.forest);
+  const network = useSylvaStore((s) => s.network);
+  const knn = useSylvaStore((s) => s.knn);
+  const boosting = useSylvaStore((s) => s.boosting);
+  const cnnWeights = useSylvaStore((s) => s.cnnWeights);
   const hyperparams = useSylvaStore((s) => s.hyperparams);
   const setPage = useSylvaStore((s) => s.setPage);
   const restart = useSylvaStore((s) => s.restart);
 
-  const isForest = algorithm === "random-forest";
-  const model = isForest ? forest : tree;
+  const kind: Kind =
+    algorithm === "random-forest"
+      ? "forest"
+      : algorithm === "neural-net"
+        ? "network"
+        : algorithm === "knn"
+          ? "knn"
+          : algorithm === "gradient-boosting"
+            ? "boosting"
+            : algorithm === "cnn"
+              ? "cnn"
+              : "tree";
+  const model =
+    kind === "forest" ? forest : kind === "network" ? network : kind === "knn" ? knn : kind === "boosting" ? boosting : kind === "cnn" ? cnnWeights : tree;
+  const unrated = algorithm !== null && UNRATED_ALGORITHMS.has(algorithm);
 
   const [board, setBoard] = useState<LeaderboardEntry[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const addedRef = useRef(false);
 
   const predictOne = useMemo(() => {
-    if (isForest && forest) return (p: Point) => predictForest(forest, p);
-    if (tree) return (p: Point) => predict(tree.root, p);
+    if (kind === "forest" && forest) return (p: Point) => predictForest(forest, p);
+    if (kind === "network" && network) {
+      const finalSnapshot = network.snapshots[network.snapshots.length - 1];
+      return (p: Point) => predictNetwork(finalSnapshot, p);
+    }
+    if (kind === "knn" && knn) return (p: Point) => predictKnn(knn, p);
+    if (kind === "boosting" && boosting) return (p: Point) => predictBoosting(boosting, p);
+    if (kind === "cnn" && cnnWeights) return (p: Point) => predictCnn(cnnWeights, p);
+    if (kind === "tree" && tree) return (p: Point) => predict(tree.root, p);
     return null;
-  }, [isForest, forest, tree]);
+  }, [kind, forest, network, knn, boosting, cnnWeights, tree]);
 
   const importance = useMemo(() => {
-    if (isForest && forest) return forestFeatureImportance(forest, FEATURE_PIXELS);
-    if (tree) return featureImportance(tree, FEATURE_PIXELS);
+    if (kind === "forest" && forest) return forestFeatureImportance(forest, FEATURE_PIXELS);
+    if (kind === "boosting" && boosting) return boostingFeatureImportance(boosting, FEATURE_PIXELS);
+    if (kind === "tree" && tree) return featureImportance(tree, FEATURE_PIXELS);
     return null;
-  }, [isForest, forest, tree]);
+  }, [kind, forest, boosting, tree]);
 
   const evaluation = useMemo(() => {
     if (!dataset || !predictOne) return null;
@@ -101,40 +217,82 @@ export function Results() {
   useEffect(() => {
     if (addedRef.current || !model || !evaluation) return;
     addedRef.current = true;
+
+    if (unrated) {
+      setBoard(getLeaderboard());
+      return;
+    }
+
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const entry: LeaderboardEntry = isForest && forest
-      ? {
-          id,
-          timestamp: Date.now(),
-          algorithm: "Random Forest",
-          accuracy: evaluation.accuracy,
-          macroF1: evaluation.macroF1,
-          depth: Math.round((forest.trees.reduce((s, t) => s + t.depth, 0) / forest.trees.length) * 10) / 10,
-          leafCount: forest.trees.reduce((s, t) => s + t.leafCount, 0),
-          summary: `${hyperparams.numTrees} trees, max depth ${hyperparams.maxDepth}`,
-        }
-      : {
-          id,
-          timestamp: Date.now(),
-          algorithm: "Decision Tree",
-          accuracy: evaluation.accuracy,
-          macroF1: evaluation.macroF1,
-          depth: tree!.depth,
-          leafCount: tree!.leafCount,
-          summary: `max depth ${hyperparams.maxDepth}, ${tree!.leafCount} leaves`,
-        };
+    let entry: LeaderboardEntry;
+    if (kind === "forest" && forest) {
+      entry = {
+        id,
+        timestamp: Date.now(),
+        algorithm: "Random Forest",
+        accuracy: evaluation.accuracy,
+        macroF1: evaluation.macroF1,
+        depth: Math.round((forest.trees.reduce((s, t) => s + t.depth, 0) / forest.trees.length) * 10) / 10,
+        leafCount: forest.trees.reduce((s, t) => s + t.leafCount, 0),
+        summary: `${hyperparams.numTrees} trees, max depth ${hyperparams.maxDepth}`,
+      };
+    } else if (kind === "network" && network) {
+      entry = {
+        id,
+        timestamp: Date.now(),
+        algorithm: "Neural Network",
+        accuracy: evaluation.accuracy,
+        macroF1: evaluation.macroF1,
+        depth: hyperparams.hiddenLayers,
+        leafCount: hyperparams.nodesPerLayer,
+        summary: `${hyperparams.hiddenLayers} hidden layer${hyperparams.hiddenLayers > 1 ? "s" : ""}, ${hyperparams.nodesPerLayer} nodes each`,
+      };
+    } else if (kind === "knn") {
+      entry = {
+        id,
+        timestamp: Date.now(),
+        algorithm: "k-Nearest Neighbors",
+        accuracy: evaluation.accuracy,
+        macroF1: evaluation.macroF1,
+        depth: hyperparams.k,
+        leafCount: 0,
+        summary: `k=${hyperparams.k}, ${hyperparams.metric}`,
+      };
+    } else if (kind === "boosting" && boosting) {
+      entry = {
+        id,
+        timestamp: Date.now(),
+        algorithm: "Gradient Boosting",
+        accuracy: evaluation.accuracy,
+        macroF1: evaluation.macroF1,
+        depth: LEARNER_MAX_DEPTH,
+        leafCount: boosting.rounds.length,
+        summary: `${hyperparams.numLearners} learners`,
+      };
+    } else {
+      entry = {
+        id,
+        timestamp: Date.now(),
+        algorithm: "Decision Tree",
+        accuracy: evaluation.accuracy,
+        macroF1: evaluation.macroF1,
+        depth: tree!.depth,
+        leafCount: tree!.leafCount,
+        summary: `max depth ${hyperparams.maxDepth}, ${tree!.leafCount} leaves`,
+      };
+    }
 
     const updated = addLeaderboardEntry(entry);
     setBoard(updated);
     setCurrentId(id);
-  }, [model, evaluation, isForest, forest, tree, hyperparams.maxDepth, hyperparams.numTrees]);
+  }, [model, evaluation, kind, forest, network, knn, boosting, tree, hyperparams, unrated]);
 
   useEffect(() => {
     if (board.length === 0) setBoard(getLeaderboard());
   }, [board.length]);
 
-  if (!dataset || !model || !evaluation || !predictOne || !importance) {
+  if (!dataset || !model || !evaluation || !predictOne) {
     return (
       <div className="min-h-screen">
         <StepHeader step={4} />
@@ -144,20 +302,61 @@ export function Results() {
   }
 
   const rank = currentId ? rankOf(board, currentId) : null;
+  const subject =
+    kind === "forest"
+      ? "forest"
+      : kind === "network"
+        ? "network"
+        : kind === "knn"
+          ? "k-NN classifier"
+          : kind === "boosting"
+            ? "boosting ensemble"
+            : kind === "cnn"
+              ? "convolutional network"
+              : "tree";
 
-  const stats = isForest && forest
-    ? [
-        { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
-        { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
-        { label: "Trees", value: String(forest.trees.length) },
-        { label: "Avg tree depth", value: (forest.trees.reduce((s, t) => s + t.depth, 0) / forest.trees.length).toFixed(1) },
-      ]
-    : [
-        { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
-        { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
-        { label: "Tree depth", value: String(tree!.depth) },
-        { label: "Leaf nodes", value: String(tree!.leafCount) },
-      ];
+  const stats =
+    kind === "forest" && forest
+      ? [
+          { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
+          { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
+          { label: "Trees", value: String(forest.trees.length) },
+          { label: "Avg tree depth", value: (forest.trees.reduce((s, t) => s + t.depth, 0) / forest.trees.length).toFixed(1) },
+        ]
+      : kind === "network" && network
+        ? [
+            { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
+            { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
+            { label: "Hidden layers", value: String(network.layerSizes.length - 2) },
+            { label: "Nodes per layer", value: String(network.layerSizes[1]) },
+          ]
+        : kind === "knn"
+          ? [
+              { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
+              { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
+              { label: "Neighbors (k)", value: String(hyperparams.k) },
+              { label: "Distance metric", value: hyperparams.metric === "euclidean" ? "Euclidean" : "Manhattan" },
+            ]
+          : kind === "boosting" && boosting
+            ? [
+                { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
+                { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
+                { label: "Learners", value: String(boosting.rounds.length) },
+                { label: "Learner depth", value: String(LEARNER_MAX_DEPTH) },
+              ]
+            : kind === "cnn" && cnnWeights
+              ? [
+                  { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
+                  { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
+                  { label: "Conv layers", value: "2" },
+                  { label: "Learned filters", value: String(cnnWeights.conv1.filters.length + cnnWeights.conv2.filters.length) },
+                ]
+              : [
+                  { label: "Test accuracy", value: `${(evaluation.accuracy * 100).toFixed(1)}%` },
+                  { label: "Macro F1", value: evaluation.macroF1.toFixed(3) },
+                  { label: "Tree depth", value: String(tree!.depth) },
+                  { label: "Leaf nodes", value: String(tree!.leafCount) },
+                ];
 
   return (
     <div className="min-h-screen">
@@ -165,10 +364,15 @@ export function Results() {
 
       <main className="mx-auto max-w-5xl px-6 pb-24 pt-2 sm:px-8">
         <div className="mb-8 text-center">
-          <h1 className="text-4xl text-ink sm:text-[38px]">Your {isForest ? "forest" : "tree"}, evaluated</h1>
+          <h1 className="text-4xl text-ink sm:text-[38px]">Your {subject}, evaluated</h1>
           <p className="mx-auto mt-3 max-w-xl text-[17px] leading-relaxed text-ink-soft">
-            Performance on handwritten digits {isForest ? "the forest" : "the tree"} never saw during training.
+            Performance on handwritten digits the {subject} never saw during training.
           </p>
+          {unrated && (
+            <span className="mt-3 inline-block rounded-full bg-amber-soft px-3 py-1 text-[12px] font-medium uppercase tracking-wide text-amber">
+              Unrated · just for fun
+            </span>
+          )}
         </div>
 
         <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -183,11 +387,33 @@ export function Results() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr]">
           <div className="flex flex-col gap-6">
             <Card className="p-6">
-              <h2 className="mb-1 text-lg font-semibold text-ink">Pixels that matter</h2>
+              <h2 className="mb-1 text-lg font-semibold text-ink">
+                {kind === "network"
+                  ? "What each neuron looks for"
+                  : kind === "knn"
+                    ? "Its nearest neighbors"
+                    : kind === "cnn"
+                      ? "What its filters look for"
+                      : "Pixels that matter"}
+              </h2>
               <p className="mb-4 text-sm text-ink-soft">
-                Where on the digit {isForest ? "the forest" : "the tree"} chose to look.
+                {kind === "network"
+                  ? "Each tile is one hidden neuron's learned pattern — green where it looks for ink, amber where it looks for blank paper."
+                  : kind === "knn"
+                    ? "For one example digit, these are the training images it matched most closely."
+                    : kind === "cnn"
+                      ? "Each tile is one of its learned 3×3 filters, slid across every position of the image — green where it looks for more ink, amber for less."
+                      : `Where on the digit the ${subject} chose to look.`}
               </p>
-              <PixelHeatmap importance={importance} />
+              {kind === "network" && network ? (
+                <ReceptiveFields network={network} />
+              ) : kind === "knn" && knn ? (
+                <NearestNeighborsPanel knn={knn} example={dataset.test[0]} />
+              ) : kind === "cnn" && cnnWeights ? (
+                <CnnFilters weights={cnnWeights} />
+              ) : (
+                importance && <PixelHeatmap importance={importance} />
+              )}
             </Card>
 
             <Card className="p-6">
@@ -244,10 +470,14 @@ export function Results() {
             <Card className="flex-1 p-6">
               <div className="mb-4 flex items-baseline justify-between">
                 <h2 className="text-lg font-semibold text-ink">Leaderboard</h2>
-                {rank && (
-                  <span className="text-sm font-medium text-brand-dark">
-                    You placed #{rank} of {board.length}
-                  </span>
+                {unrated ? (
+                  <span className="text-sm font-medium text-ink-faint">Unrated runs don't appear here</span>
+                ) : (
+                  rank && (
+                    <span className="text-sm font-medium text-brand-dark">
+                      You placed #{rank} of {board.length}
+                    </span>
+                  )
                 )}
               </div>
               <div className="max-h-64 overflow-y-auto">
