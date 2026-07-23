@@ -60,6 +60,12 @@ def _connect():
     conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Every statement is IF NOT EXISTS, so this is a no-op once the schema is
+    # there. Running it per connection rather than only at startup means the
+    # server recovers on its own if the database file is deleted or replaced
+    # underneath it — otherwise every request 500s with "no such table" until
+    # someone restarts the process. The parse cost is irrelevant at this scale.
+    conn.executescript(SCHEMA)
     return conn
 
 
