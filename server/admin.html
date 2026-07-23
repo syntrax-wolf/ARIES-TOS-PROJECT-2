@@ -70,6 +70,43 @@
   .btn-ghost { background: none; border: 1px solid var(--border); border-radius: 10px; padding: 7px 14px; font-size: 14px; cursor: pointer; color: var(--ink-soft); }
   .btn-ghost:hover { border-color: var(--ink-faint); }
   .empty { padding: 20px; color: var(--ink-faint); }
+
+  /* ranked leaderboard (dashboard section) */
+  td.rank { font-weight: 700; color: var(--brand-dark); width: 44px; }
+  .medal { font-size: 16px; }
+
+  /* big-screen present mode */
+  .present {
+    position: fixed; inset: 0; z-index: 50; overflow: auto;
+    background: radial-gradient(circle at 50% -10%, #eaf1ea, var(--bg) 60%);
+    padding: 3vh 4vw;
+  }
+  .present-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2vh; }
+  .present-title { display: flex; align-items: baseline; gap: 14px; }
+  .present-title h1 { margin: 0; font-size: clamp(28px, 4vw, 56px); color: var(--brand-dark); }
+  .present-title .sub { font-size: clamp(13px, 1.3vw, 20px); color: var(--ink-faint); }
+  .present-controls { display: flex; gap: 8px; align-items: center; }
+  .present-select { padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 15px; font-family: inherit; color: var(--ink); }
+  .present-rows { display: flex; flex-direction: column; gap: clamp(6px, 1vh, 14px); }
+  .prow {
+    display: grid; grid-template-columns: clamp(56px,6vw,110px) 1fr auto auto;
+    align-items: center; gap: clamp(10px, 2vw, 32px);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: clamp(10px, 1.6vh, 22px) clamp(16px, 2.4vw, 34px);
+    box-shadow: 0 2px 10px rgba(29,42,31,.05);
+  }
+  .prow .p-rank { font-size: clamp(26px, 3.4vw, 52px); font-weight: 800; color: var(--ink-faint); text-align: center; font-variant-numeric: tabular-nums; }
+  .prow .p-name { font-size: clamp(20px, 2.4vw, 38px); font-weight: 600; color: var(--ink); }
+  .prow .p-entry { font-family: ui-monospace, Menlo, monospace; font-size: clamp(12px, 1.2vw, 18px); color: var(--ink-faint); margin-top: 2px; }
+  .prow .p-algo { font-size: clamp(13px, 1.2vw, 19px); color: var(--ink-soft); text-align: right; white-space: nowrap; }
+  .prow .p-score { text-align: right; }
+  .prow .p-f1 { font-size: clamp(24px, 3vw, 46px); font-weight: 800; color: var(--brand-dark); font-variant-numeric: tabular-nums; }
+  .prow .p-acc { font-size: clamp(12px, 1.1vw, 17px); color: var(--ink-faint); }
+  .prow.gold   { border-color: #d4b24c; background: linear-gradient(90deg, #fbf3d9, var(--surface) 55%); }
+  .prow.silver { border-color: #b8bfc4; background: linear-gradient(90deg, #eef1f3, var(--surface) 55%); }
+  .prow.bronze { border-color: #cd9b6a; background: linear-gradient(90deg, #f6e7d6, var(--surface) 55%); }
+  .prow.gold .p-rank, .prow.silver .p-rank, .prow.bronze .p-rank { color: var(--ink); }
+  .present-foot { margin-top: 2vh; text-align: center; color: var(--ink-faint); font-size: 14px; }
 </style>
 </head>
 <body>
@@ -205,9 +242,106 @@ async function loadRuns() {
   if (host) host.innerHTML = ok ? runsTable(body) : `<div class="empty">Failed to load runs.</div>`;
 }
 
+const MEDALS = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+// Ranked board = each student's best run, already sorted by the server
+// (macro F1 desc, then accuracy, then earliest). This just renders that order.
+function rankedBoardTable(rows) {
+  if (!rows.length) return `<div class="empty">No ranked runs yet.</div>`;
+  return `<div class="table-scroll"><table>
+    <thead><tr><th>#</th><th>Name</th><th>Entry no.</th><th>Algorithm</th><th>Config</th><th class="num">Macro F1</th><th class="num">Accuracy</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="rank">${r.position <= 3 ? `<span class="medal">${MEDALS[r.position]}</span>` : r.position}</td>
+      <td>${esc(r.name)}</td>
+      <td class="mono">${esc(r.entry_number)}</td>
+      <td>${esc(r.algorithm)}</td>
+      <td class="muted">${esc(r.summary)}</td>
+      <td class="num">${fmtF1(r.macro_f1)}</td>
+      <td class="num">${fmtPct(r.accuracy)}</td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
+
+// --- big-screen present mode ------------------------------------------------
+
+let presentAlgo = null;
+let presentTimer = null;
+
+async function fetchBoard(algorithm) {
+  const q = new URLSearchParams({ limit: "100" });
+  if (algorithm) q.set("algorithm", algorithm);
+  const { ok, body } = await api(`/api/leaderboard?${q.toString()}`);
+  return ok ? body : [];
+}
+
+function presentRowsHtml(rows) {
+  if (!rows.length) return `<div class="empty" style="font-size:20px;text-align:center;">No runs on the board yet.</div>`;
+  return rows.map(r => {
+    const cls = r.position === 1 ? "gold" : r.position === 2 ? "silver" : r.position === 3 ? "bronze" : "";
+    const rankCell = r.position <= 3 ? `<span class="medal" style="font-size:1em">${MEDALS[r.position]}</span>` : `#${r.position}`;
+    return `<div class="prow ${cls}">
+      <div class="p-rank">${rankCell}</div>
+      <div><div class="p-name">${esc(r.name)}</div><div class="p-entry">${esc(r.entry_number)}</div></div>
+      <div class="p-algo">${esc(r.algorithm)}<br><span style="opacity:.7">${esc(r.summary)}</span></div>
+      <div class="p-score"><div class="p-f1">${fmtF1(r.macro_f1)}</div><div class="p-acc">${fmtPct(r.accuracy)} acc</div></div>
+    </div>`;
+  }).join("");
+}
+
+async function refreshPresent() {
+  const host = document.getElementById("presentRows");
+  if (!host) return;
+  host.innerHTML = presentRowsHtml(await fetchBoard(presentAlgo));
+  const stamp = document.getElementById("presentStamp");
+  if (stamp) stamp.textContent = "updated " + new Date().toLocaleTimeString();
+}
+
+async function openPresent(algos) {
+  const rows = await fetchBoard(presentAlgo);
+  const overlay = document.createElement("div");
+  overlay.className = "present";
+  overlay.id = "presentOverlay";
+  overlay.innerHTML = `
+    <div class="present-head">
+      <div class="present-title">
+        <h1>Leaderboard</h1>
+        <span class="sub">ranked by macro F1 · server-verified</span>
+      </div>
+      <div class="present-controls">
+        <select class="present-select" id="presentFilter">
+          <option value="">All algorithms</option>
+          ${algos.map(a => `<option value="${esc(a)}"${presentAlgo === a ? " selected" : ""}>${esc(a)}</option>`).join("")}
+        </select>
+        <button class="btn-ghost" id="presentFs">⛶ Fullscreen</button>
+        <button class="btn-ghost" id="presentClose">✕ Exit</button>
+      </div>
+    </div>
+    <div class="present-rows" id="presentRows">${presentRowsHtml(rows)}</div>
+    <div class="present-foot">Auto-refreshing every 15s · <span id="presentStamp">updated ${new Date().toLocaleTimeString()}</span></div>`;
+  document.body.appendChild(overlay);
+
+  presentTimer = setInterval(refreshPresent, 15000);
+  document.getElementById("presentClose").addEventListener("click", closePresent);
+  document.getElementById("presentFs").addEventListener("click", () => {
+    if (!document.fullscreenElement) overlay.requestFullscreen?.(); else document.exitFullscreen?.();
+  });
+  document.getElementById("presentFilter").addEventListener("change", (e) => {
+    presentAlgo = e.target.value || null;
+    refreshPresent();
+  });
+  document.addEventListener("keydown", presentEsc);
+}
+
+function presentEsc(e) { if (e.key === "Escape" && !document.fullscreenElement) closePresent(); }
+
+function closePresent() {
+  if (presentTimer) { clearInterval(presentTimer); presentTimer = null; }
+  document.removeEventListener("keydown", presentEsc);
+  document.getElementById("presentOverlay")?.remove();
+}
+
 async function renderDashboard() {
-  const [overview, students, runs] = await Promise.all([
-    api("/admin/api/overview"), api("/admin/api/students"), api("/admin/api/runs"),
+  const [overview, students, runs, board] = await Promise.all([
+    api("/admin/api/overview"), api("/admin/api/students"), api("/admin/api/runs"), fetchBoard(null),
   ]);
 
   if (overview.status === 401) { renderLogin("Your session expired — sign in again."); return; }
@@ -227,6 +361,15 @@ async function renderDashboard() {
       <h1 style="margin:6px 0 0;font-size:28px;">Leaderboard dashboard</h1>
       <p class="muted" style="margin:4px 0 0;">The full picture behind the public board — every run, every student, and the client-vs-server score gap.</p>
       ${statCards(o)}
+
+      <section>
+        <div class="section-head">
+          <h2 style="margin:0;font-size:19px;">Leaderboard — ranked</h2>
+          <button class="btn-ghost" id="presentBtn">⛶ Present on big screen</button>
+        </div>
+        <div class="card">${rankedBoardTable(board)}</div>
+        <p class="note">Each student's best run, ranked by macro F1 (then accuracy, then earliest submission). "Present on big screen" opens a full-screen display for a projector, auto-refreshing every 15s.</p>
+      </section>
 
       <section>
         <div class="section-head"><h2 style="margin:0;font-size:19px;">By algorithm</h2></div>
@@ -256,6 +399,7 @@ async function renderDashboard() {
     renderLogin("Signed out.");
   });
   document.getElementById("refreshBtn").addEventListener("click", renderDashboard);
+  document.getElementById("presentBtn").addEventListener("click", () => openPresent(algos));
   document.getElementById("algoFilters").addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
     if (!chip) return;
