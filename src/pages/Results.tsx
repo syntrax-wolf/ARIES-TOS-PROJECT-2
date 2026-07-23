@@ -13,7 +13,7 @@ import { predictCnn, type CnnWeights } from "../lib/cnn";
 import { evaluate } from "../lib/metrics";
 import { classColor, heatColor, weightColor } from "../lib/palette";
 import { pixelsToDataUrl, FEATURE_PIXELS, FEATURE_SIZE, RAW_SIZE } from "../lib/mnist";
-import { addLeaderboardEntry, getLeaderboard, rankOf, type LeaderboardEntry } from "../lib/leaderboard";
+import { ApiError, fetchLeaderboard, submitRun, type BoardRow, type SubmitResult } from "../lib/api";
 
 const HEAT_CELL = 20;
 const GALLERY_COUNT = 12;
@@ -165,6 +165,8 @@ export function Results() {
   const boosting = useSylvaStore((s) => s.boosting);
   const cnnWeights = useSylvaStore((s) => s.cnnWeights);
   const hyperparams = useSylvaStore((s) => s.hyperparams);
+  const student = useSylvaStore((s) => s.student);
+  const trainedAt = useSylvaStore((s) => s.trainedAt);
   const setPage = useSylvaStore((s) => s.setPage);
   const restart = useSylvaStore((s) => s.restart);
 
@@ -184,9 +186,11 @@ export function Results() {
     kind === "forest" ? forest : kind === "network" ? network : kind === "knn" ? knn : kind === "boosting" ? boosting : kind === "cnn" ? cnnWeights : tree;
   const unrated = algorithm !== null && UNRATED_ALGORITHMS.has(algorithm);
 
-  const [board, setBoard] = useState<LeaderboardEntry[]>([]);
-  const [currentId, setCurrentId] = useState<string | null>(null);
-  const addedRef = useRef(false);
+  const [board, setBoard] = useState<BoardRow[]>([]);
+  const [submission, setSubmission] = useState<SubmitResult | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submittedRef = useRef(false);
 
   const predictOne = useMemo(() => {
     if (kind === "forest" && forest) return (p: Point) => predictForest(forest, p);
@@ -214,83 +218,48 @@ export function Results() {
     return evaluate(dataset.test, predictions, dataset.classes);
   }, [dataset, predictOne]);
 
+  // The browser's model drove the animation; it does not decide the score.
+  // Submit what was configured and let the server retrain and rank it.
+  //
+  // submittedRef alone guards this — deliberately no "cancelled" flag. React's
+  // StrictMode mounts, cleans up, then remounts in dev; a cleanup flag would
+  // discard the response of the one request we fired and strand the UI on
+  // "Scoring your run…". Setting state after unmount is a harmless no-op.
   useEffect(() => {
-    if (addedRef.current || !model || !evaluation) return;
-    addedRef.current = true;
+    if (submittedRef.current || !model || !evaluation || !student || trainedAt === null) return;
+    submittedRef.current = true;
 
-    if (unrated) {
-      setBoard(getLeaderboard());
-      return;
+    async function run() {
+      if (unrated) {
+        try {
+          setBoard(await fetchLeaderboard());
+        } catch (err) {
+          setBoardError(err instanceof ApiError ? err.message : "Could not load the leaderboard.");
+        }
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const result = await submitRun({
+          studentId: student!.student_id,
+          algorithm: algorithm!,
+          seed: trainedAt!,
+          hyperparams: { ...hyperparams },
+          clientAccuracy: evaluation!.accuracy,
+          clientMacroF1: evaluation!.macroF1,
+        });
+        setSubmission(result);
+        setBoard(await fetchLeaderboard());
+      } catch (err) {
+        setBoardError(err instanceof ApiError ? err.message : "Could not submit your run.");
+      } finally {
+        setSubmitting(false);
+      }
     }
 
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    let entry: LeaderboardEntry;
-    if (kind === "forest" && forest) {
-      entry = {
-        id,
-        timestamp: Date.now(),
-        algorithm: "Random Forest",
-        accuracy: evaluation.accuracy,
-        macroF1: evaluation.macroF1,
-        depth: Math.round((forest.trees.reduce((s, t) => s + t.depth, 0) / forest.trees.length) * 10) / 10,
-        leafCount: forest.trees.reduce((s, t) => s + t.leafCount, 0),
-        summary: `${hyperparams.numTrees} trees, max depth ${hyperparams.maxDepth}`,
-      };
-    } else if (kind === "network" && network) {
-      entry = {
-        id,
-        timestamp: Date.now(),
-        algorithm: "Neural Network",
-        accuracy: evaluation.accuracy,
-        macroF1: evaluation.macroF1,
-        depth: hyperparams.hiddenLayers,
-        leafCount: hyperparams.nodesPerLayer,
-        summary: `${hyperparams.hiddenLayers} hidden layer${hyperparams.hiddenLayers > 1 ? "s" : ""}, ${hyperparams.nodesPerLayer} nodes each`,
-      };
-    } else if (kind === "knn") {
-      entry = {
-        id,
-        timestamp: Date.now(),
-        algorithm: "k-Nearest Neighbors",
-        accuracy: evaluation.accuracy,
-        macroF1: evaluation.macroF1,
-        depth: hyperparams.k,
-        leafCount: 0,
-        summary: `k=${hyperparams.k}, ${hyperparams.metric}`,
-      };
-    } else if (kind === "boosting" && boosting) {
-      entry = {
-        id,
-        timestamp: Date.now(),
-        algorithm: "Gradient Boosting",
-        accuracy: evaluation.accuracy,
-        macroF1: evaluation.macroF1,
-        depth: LEARNER_MAX_DEPTH,
-        leafCount: boosting.rounds.length,
-        summary: `${hyperparams.numLearners} learners`,
-      };
-    } else {
-      entry = {
-        id,
-        timestamp: Date.now(),
-        algorithm: "Decision Tree",
-        accuracy: evaluation.accuracy,
-        macroF1: evaluation.macroF1,
-        depth: tree!.depth,
-        leafCount: tree!.leafCount,
-        summary: `max depth ${hyperparams.maxDepth}, ${tree!.leafCount} leaves`,
-      };
-    }
-
-    const updated = addLeaderboardEntry(entry);
-    setBoard(updated);
-    setCurrentId(id);
-  }, [model, evaluation, kind, forest, network, knn, boosting, tree, hyperparams, unrated]);
-
-  useEffect(() => {
-    if (board.length === 0) setBoard(getLeaderboard());
-  }, [board.length]);
+    void run();
+  }, [model, evaluation, student, trainedAt, algorithm, hyperparams, unrated]);
 
   if (!dataset || !model || !evaluation || !predictOne) {
     return (
@@ -301,7 +270,8 @@ export function Results() {
     );
   }
 
-  const rank = currentId ? rankOf(board, currentId) : null;
+  const rank = submission?.position ?? null;
+  const currentRunId = submission?.run_id ?? null;
   const subject =
     kind === "forest"
       ? "forest"
@@ -467,35 +437,88 @@ export function Results() {
               </div>
             </Card>
 
+            {submission && (
+              <Card className="p-6">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="text-lg font-semibold text-ink">Verified score</h2>
+                  <span className="text-[13px] text-ink-faint">seed {submission.seed}</span>
+                </div>
+                <p className="mt-1 text-sm text-ink-soft">
+                  The server retrained this configuration on the same {submission.official.n_train}/
+                  {submission.official.n_test} split and scored it independently. This is the number that
+                  ranks — not the one your browser computed.
+                </p>
+                <div className="mt-4 flex flex-wrap items-end gap-x-8 gap-y-3">
+                  <div>
+                    <div className="text-3xl font-semibold text-brand-dark tabular-nums">
+                      {submission.official.macro_f1.toFixed(3)}
+                    </div>
+                    <div className="mt-0.5 text-sm text-ink-soft">Macro F1 · official</div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-semibold text-ink tabular-nums">
+                      {(submission.official.accuracy * 100).toFixed(1)}%
+                    </div>
+                    <div className="mt-0.5 text-sm text-ink-soft">Accuracy · official</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-medium text-ink-faint tabular-nums">
+                      {evaluation.macroF1.toFixed(3)} / {(evaluation.accuracy * 100).toFixed(1)}%
+                    </div>
+                    <div className="mt-0.5 text-sm text-ink-faint">Your browser's model</div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             <Card className="flex-1 p-6">
               <div className="mb-4 flex items-baseline justify-between">
                 <h2 className="text-lg font-semibold text-ink">Leaderboard</h2>
                 {unrated ? (
                   <span className="text-sm font-medium text-ink-faint">Unrated runs don't appear here</span>
-                ) : (
-                  rank && (
-                    <span className="text-sm font-medium text-brand-dark">
-                      You placed #{rank} of {board.length}
-                    </span>
-                  )
-                )}
+                ) : submitting ? (
+                  <span className="text-sm font-medium text-ink-faint">Scoring your run…</span>
+                ) : rank ? (
+                  <span className="text-sm font-medium text-brand-dark">
+                    You placed #{rank} of {submission?.total ?? board.length}
+                  </span>
+                ) : submission ? (
+                  <span className="text-sm font-medium text-ink-faint">
+                    Not your best run — your earlier score still stands
+                  </span>
+                ) : null}
               </div>
+
+              {boardError && (
+                <p className="mb-3 rounded-xl bg-amber-soft px-3.5 py-2.5 text-sm text-danger">{boardError}</p>
+              )}
+
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full border-collapse text-sm">
                   <tbody>
-                    {board.slice(0, 12).map((entry, i) => (
+                    {board.map((row, i) => (
                       <tr
-                        key={entry.id}
-                        className={entry.id === currentId ? "bg-brand-soft/70" : i % 2 === 1 ? "bg-surface-soft/60" : ""}
+                        key={row.run_id}
+                        className={
+                          row.run_id === currentRunId
+                            ? "bg-brand-soft/70"
+                            : i % 2 === 1
+                              ? "bg-surface-soft/60"
+                              : ""
+                        }
                       >
-                        <td className="rounded-l-md py-2 pl-2 pr-1 font-medium text-ink-faint">#{i + 1}</td>
-                        <td className="py-2 pr-2 font-semibold tabular-nums text-ink">
-                          {(entry.accuracy * 100).toFixed(1)}%
-                        </td>
-                        <td className="py-2 pr-2 text-ink-faint">{entry.algorithm}</td>
-                        <td className="rounded-r-md py-2 pr-2 text-ink-faint">{entry.summary}</td>
+                        <td className="rounded-l-md py-2 pl-2 pr-1 font-medium text-ink-faint">#{row.position}</td>
+                        <td className="py-2 pr-2 font-medium text-ink">{row.name}</td>
+                        <td className="py-2 pr-2 font-mono text-[12px] text-ink-faint">{row.entry_number}</td>
+                        <td className="py-2 pr-2 font-semibold tabular-nums text-ink">{row.macro_f1.toFixed(3)}</td>
+                        <td className="rounded-r-md py-2 pr-2 text-ink-faint">{row.summary}</td>
                       </tr>
                     ))}
+                    {board.length === 0 && !boardError && (
+                      <tr>
+                        <td className="py-3 text-sm text-ink-faint">No runs on the board yet.</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

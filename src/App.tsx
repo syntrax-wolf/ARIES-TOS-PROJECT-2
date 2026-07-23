@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useSylvaStore } from "./state/store";
+import { Register } from "./pages/Register";
 import { AlgorithmSelect } from "./pages/AlgorithmSelect";
 import { Hyperparameters } from "./pages/Hyperparameters";
 import { TreeAnimation } from "./pages/TreeAnimation";
@@ -12,20 +13,26 @@ import { Results } from "./pages/Results";
 
 function App() {
   const page = useSylvaStore((s) => s.page);
+  const student = useSylvaStore((s) => s.student);
   const algorithm = useSylvaStore((s) => s.algorithm);
+
+  // Every run is recorded against an entry number, so nothing past registration
+  // is reachable without one.
+  const resolved: typeof page = student ? page : "register";
 
   return (
     <AnimatePresence mode="wait">
       <motion.div
-        key={page}
+        key={resolved}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
       >
-        {page === "select" && <AlgorithmSelect />}
-        {page === "hyperparams" && <Hyperparameters />}
-        {page === "animation" &&
+        {resolved === "register" && <Register />}
+        {resolved === "select" && <AlgorithmSelect />}
+        {resolved === "hyperparams" && <Hyperparameters />}
+        {resolved === "animation" &&
           (algorithm === "random-forest" ? (
             <ForestAnimation />
           ) : algorithm === "neural-net" ? (
@@ -39,7 +46,7 @@ function App() {
           ) : (
             <TreeAnimation />
           ))}
-        {page === "results" && <Results />}
+        {resolved === "results" && <Results />}
       </motion.div>
     </AnimatePresence>
   );

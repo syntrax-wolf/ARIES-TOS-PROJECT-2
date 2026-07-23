@@ -7,7 +7,9 @@ import { trainKnn, type DistanceMetric, type TrainedKnn } from "../lib/knn";
 import { trainGradientBoosting, type TrainedBoosting } from "../lib/gradientBoosting";
 import { loadCnnWeights, type CnnWeights } from "../lib/cnn";
 
-export type Page = "select" | "hyperparams" | "animation" | "results";
+import type { Student } from "../lib/api";
+
+export type Page = "register" | "select" | "hyperparams" | "animation" | "results";
 export type AlgorithmId = "decision-tree" | "random-forest" | "gradient-boosting" | "knn" | "neural-net" | "cnn";
 
 /** Algorithms whose accuracy isn't posted to the shared leaderboard. */
@@ -39,6 +41,7 @@ export const DEFAULT_HYPERPARAMS: Hyperparams = {
 
 interface SylvaState {
   page: Page;
+  student: Student | null;
   algorithm: AlgorithmId | null;
   datasetConfig: DatasetConfig;
   hyperparams: Hyperparams;
@@ -53,6 +56,8 @@ interface SylvaState {
   isTraining: boolean;
 
   setPage: (page: Page) => void;
+  setStudent: (student: Student) => void;
+  signOut: () => void;
   selectAlgorithm: (algorithm: AlgorithmId) => void;
   updateHyperparams: (partial: Partial<Hyperparams>) => void;
   regenerateSeed: () => void;
@@ -63,7 +68,8 @@ interface SylvaState {
 const CLEARED_MODELS = { tree: null, forest: null, network: null, knn: null, boosting: null, cnnWeights: null };
 
 export const useSylvaStore = create<SylvaState>((set, get) => ({
-  page: "select",
+  page: "register",
+  student: null,
   algorithm: null,
   datasetConfig: DEFAULT_DATASET_CONFIG,
   hyperparams: DEFAULT_HYPERPARAMS,
@@ -78,6 +84,11 @@ export const useSylvaStore = create<SylvaState>((set, get) => ({
   isTraining: false,
 
   setPage: (page) => set({ page }),
+
+  setStudent: (student) => set({ student }),
+
+  signOut: () =>
+    set({ student: null, page: "register", algorithm: null, dataset: null, ...CLEARED_MODELS, trainedAt: null }),
 
   selectAlgorithm: (algorithm) => set({ algorithm, page: "hyperparams" }),
 
