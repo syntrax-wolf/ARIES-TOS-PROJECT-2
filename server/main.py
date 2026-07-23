@@ -6,12 +6,40 @@ On submit it rebuilds the student's exact train/test split from the seed,
 retrains a canonical scikit-learn model, and stores *its own* score. The
 client's numbers are recorded alongside for comparison but are never ranked.
 """
-from fastapi import FastAPI, HTTPException
+import os
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-import models
-import store
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE lines from server/.env into the environment, if present.
+    Keeps the admin secrets out of the shell and out of git (.env is ignored).
+    Real environment variables always win, so this never clobbers an explicit
+    export."""
+    env_path = BASE_DIR / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()  # must run before auth reads its config
+
+import auth      # noqa: E402  (import after .env is loaded)
+import models    # noqa: E402
+import store     # noqa: E402
 
 app = FastAPI(title="Sylva Leaderboard API")
 store.init_db()
@@ -136,3 +164,71 @@ def leaderboard(algorithm: str | None = None, limit: int = 12):
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Admin dashboard — gated by the admin's Kerberos id + a separate password.
+#
+# Not part of the student API. The page and its data endpoints live under
+# /admin, are never bundled into the student frontend, and every data route
+# requires a valid signed session cookie.
+# ---------------------------------------------------------------------------
+
+def require_admin(request: Request):
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    if not auth.valid_session(token):
+        raise HTTPException(status_code=401, detail="Admin sign-in required.")
+
+
+class AdminLoginRequest(BaseModel):
+    kerberos: str
+    password: str
+
+
+@app.post("/admin/api/login")
+def admin_login(req: AdminLoginRequest, response: Response):
+    try:
+        token = auth.login(req.kerberos, req.password)
+    except auth.LoginError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    response.set_cookie(
+        key=auth.SESSION_COOKIE,
+        value=token,
+        max_age=auth.SESSION_TTL_SECONDS,
+        httponly=True,      # not readable from JS
+        samesite="strict",  # not sent on cross-site requests
+        # secure=True omitted so it works over http://localhost; enable behind HTTPS.
+    )
+    return {"ok": True}
+
+
+@app.post("/admin/api/logout")
+def admin_logout(response: Response):
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return {"ok": True}
+
+
+@app.get("/admin/api/session")
+def admin_session(request: Request):
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    return {"authenticated": auth.valid_session(token), "configured": auth.is_configured()}
+
+
+@app.get("/admin/api/overview", dependencies=[Depends(require_admin)])
+def admin_overview():
+    return store.admin_overview()
+
+
+@app.get("/admin/api/runs", dependencies=[Depends(require_admin)])
+def admin_runs(algorithm: str | None = None, limit: int = 500):
+    return store.admin_all_runs(algorithm, limit=limit)
+
+
+@app.get("/admin/api/students", dependencies=[Depends(require_admin)])
+def admin_students():
+    return store.admin_students()
+
+
+@app.get("/admin")
+def admin_page():
+    return FileResponse(BASE_DIR / "admin.html")

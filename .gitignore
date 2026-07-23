@@ -28,3 +28,7 @@ server/__pycache__/
 server/*.db
 server/*.db-wal
 server/*.db-shm
+
+# Admin secrets — never commit
+server/.env
+.env

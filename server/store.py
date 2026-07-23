@@ -253,3 +253,116 @@ def rank_of_run(run_id: int, algorithm: str | None = None) -> tuple[int | None, 
         if row["run_id"] == run_id:
             return row["position"], len(board)
     return None, len(board)
+
+
+# ---------------------------------------------------------------------------
+# Admin views — the full picture behind the public board. Admin-only.
+# ---------------------------------------------------------------------------
+
+def admin_overview() -> dict:
+    """Headline counts for the dashboard."""
+    with _db() as conn:
+        totals = conn.execute(
+            """SELECT
+                 (SELECT COUNT(*) FROM students) AS students,
+                 (SELECT COUNT(*) FROM runs)     AS runs,
+                 (SELECT COUNT(DISTINCT algorithm) FROM runs) AS algorithms,
+                 (SELECT MAX(macro_f1) FROM runs) AS best_macro_f1,
+                 (SELECT MAX(created_at) FROM runs) AS last_run_at"""
+        ).fetchone()
+
+        per_algo = conn.execute(
+            """SELECT algorithm,
+                      COUNT(*) AS runs,
+                      COUNT(DISTINCT student_id) AS students,
+                      MAX(macro_f1) AS best_macro_f1,
+                      AVG(macro_f1) AS avg_macro_f1
+               FROM runs
+               GROUP BY algorithm
+               ORDER BY runs DESC"""
+        ).fetchall()
+
+    return {
+        "students": totals["students"],
+        "runs": totals["runs"],
+        "algorithms": totals["algorithms"],
+        "best_macro_f1": totals["best_macro_f1"],
+        "last_run_at": totals["last_run_at"],
+        "per_algorithm": [
+            {
+                "algorithm": r["algorithm"],
+                "runs": r["runs"],
+                "students": r["students"],
+                "best_macro_f1": r["best_macro_f1"],
+                "avg_macro_f1": r["avg_macro_f1"],
+            }
+            for r in per_algo
+        ],
+    }
+
+
+def admin_all_runs(algorithm: str | None = None, limit: int = 500) -> list[dict]:
+    """Every run, newest first — including a student's non-best runs and the
+    client-vs-server score gap, which the public board hides."""
+    with _db() as conn:
+        rows = conn.execute(
+            """SELECT r.id, r.created_at, s.name, s.entry_number, r.algorithm,
+                      r.summary, r.hyperparams, r.seed,
+                      r.accuracy, r.macro_f1, r.train_accuracy,
+                      r.client_accuracy, r.client_macro_f1
+               FROM runs r
+               JOIN students s ON s.id = r.student_id
+               WHERE (:algorithm IS NULL OR r.algorithm = :algorithm)
+               ORDER BY r.created_at DESC
+               LIMIT :limit""",
+            {"algorithm": algorithm, "limit": max(1, min(limit, 5000))},
+        ).fetchall()
+
+    return [
+        {
+            "run_id": r["id"],
+            "timestamp": r["created_at"],
+            "name": r["name"],
+            "entry_number": r["entry_number"],
+            "algorithm": r["algorithm"],
+            "summary": r["summary"],
+            "hyperparams": json.loads(r["hyperparams"]),
+            "seed": r["seed"],
+            "accuracy": r["accuracy"],
+            "macro_f1": r["macro_f1"],
+            "train_accuracy": r["train_accuracy"],
+            "client_accuracy": r["client_accuracy"],
+            "client_macro_f1": r["client_macro_f1"],
+        }
+        for r in rows
+    ]
+
+
+def admin_students() -> list[dict]:
+    """Every registered student with their activity, best-first."""
+    with _db() as conn:
+        rows = conn.execute(
+            """SELECT s.id, s.name, s.entry_number, s.created_at,
+                      COUNT(r.id) AS total_runs,
+                      COUNT(DISTINCT r.algorithm) AS algorithms_tried,
+                      MAX(r.macro_f1) AS best_macro_f1,
+                      MAX(r.created_at) AS last_run_at
+               FROM students s
+               LEFT JOIN runs r ON r.student_id = s.id
+               GROUP BY s.id
+               ORDER BY best_macro_f1 DESC NULLS LAST, s.created_at ASC""",
+        ).fetchall()
+
+    return [
+        {
+            "student_id": r["id"],
+            "name": r["name"],
+            "entry_number": r["entry_number"],
+            "registered_at": r["created_at"],
+            "total_runs": r["total_runs"],
+            "algorithms_tried": r["algorithms_tried"],
+            "best_macro_f1": r["best_macro_f1"],
+            "last_run_at": r["last_run_at"],
+        }
+        for r in rows
+    ]
