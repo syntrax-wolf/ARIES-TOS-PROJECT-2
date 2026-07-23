@@ -32,3 +32,6 @@ server/*.db-shm
 # Admin secrets — never commit
 server/.env
 .env
+
+# scratch
+.super-claude/

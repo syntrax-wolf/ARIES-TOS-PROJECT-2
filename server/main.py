@@ -163,7 +163,7 @@ def leaderboard(algorithm: str | None = None, limit: int = 12):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "backend": store.BACKEND}
 
 
 # ---------------------------------------------------------------------------
