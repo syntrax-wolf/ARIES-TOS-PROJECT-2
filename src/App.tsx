@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useSylvaStore } from "./state/store";
 import { AlgorithmSelect } from "./pages/AlgorithmSelect";
@@ -7,8 +8,12 @@ import { ForestAnimation } from "./pages/ForestAnimation";
 import { NeuralNetworkAnimation } from "./pages/NeuralNetworkAnimation";
 import { KnnAnimation } from "./pages/KnnAnimation";
 import { GradientBoostingAnimation } from "./pages/GradientBoostingAnimation";
-import { CnnAnimation } from "./pages/CnnAnimation";
 import { Results } from "./pages/Results";
+
+// The CNN page pulls in three.js + @react-three/fiber for its 3D forward-pass
+// visualization — lazy-load it so everyone choosing a non-CNN algorithm never
+// downloads that weight.
+const CnnAnimation = lazy(() => import("./pages/CnnAnimation").then((m) => ({ default: m.CnnAnimation })));
 
 function App() {
   const page = useSylvaStore((s) => s.page);
@@ -35,7 +40,9 @@ function App() {
           ) : algorithm === "gradient-boosting" ? (
             <GradientBoostingAnimation />
           ) : algorithm === "cnn" ? (
-            <CnnAnimation />
+            <Suspense fallback={<div className="fixed inset-0 bg-bg" />}>
+              <CnnAnimation />
+            </Suspense>
           ) : (
             <TreeAnimation />
           ))}

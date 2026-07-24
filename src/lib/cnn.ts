@@ -6,13 +6,19 @@ import { FEATURE_SIZE, NUM_CLASSES } from "./mnist";
 // It just loads the fitted weights baked at public/cnn/weights.json and runs
 // the forward pass, keeping every intermediate grid around so the animation
 // can show real activations rather than a decorative stand-in.
+//
+// Architecture: input 14x14x1 -> pad(1) 16x16x1 -> conv1 3x3x8 -> 14x14x8
+// (relu) -> pool1 2x2 -> 7x7x8 -> pad(1) 9x9x8 -> conv2 3x3x16 -> 7x7x16
+// (relu) -> pool2 2x2 (floor) -> 3x3x16 -> flatten 144 -> dense1 32 (relu)
+// -> dense2 10 -> softmax.
 
-export const CONV1_FILTERS = 4;
+export const PAD = 1;
+export const CONV1_FILTERS = 8;
 export const CONV1_K = 3;
-export const CONV2_FILTERS = 8;
+export const CONV2_FILTERS = 16;
 export const CONV2_K = 3;
 export const POOL = 2;
-export const DENSE1_SIZE = 16;
+export const DENSE1_SIZE = 32;
 
 export interface CnnWeights {
   conv1: { filters: number[][][][]; biases: number[] };
@@ -25,11 +31,13 @@ export type Grid = number[][][]; // [H][W][C]
 
 export interface CnnForward {
   input: number[][]; // 14x14, normalized to [0,1]
-  conv1: Grid; // 12x12x4, post-ReLU
-  pool1: Grid; // 6x6x4
-  conv2: Grid; // 4x4x8, post-ReLU
-  pool2: Grid; // 2x2x8
-  dense1: number[]; // 16, post-ReLU
+  padded1: Grid; // 16x16x1, zero-padded input
+  conv1: Grid; // 14x14x8, post-ReLU
+  pool1: Grid; // 7x7x8
+  padded2: Grid; // 9x9x8, zero-padded pool1
+  conv2: Grid; // 7x7x16, post-ReLU
+  pool2: Grid; // 3x3x16
+  dense1: number[]; // 32, post-ReLU
   logits: number[]; // 10
   probs: number[]; // 10
   predicted: number;
@@ -83,12 +91,23 @@ function reluGrid(x: Grid): Grid {
   return x.map((row) => row.map((cell) => cell.map(relu)));
 }
 
+/** Zero-pads an [H][W][C] grid by `p` on every side. */
+function padGrid(x: Grid, p: number): Grid {
+  const H = x.length;
+  const W = x[0].length;
+  const C = x[0][0].length;
+  const out: Grid = Array.from({ length: H + 2 * p }, () => Array.from({ length: W + 2 * p }, () => new Array(C).fill(0)));
+  for (let h = 0; h < H; h++) for (let w = 0; w < W; w++) for (let c = 0; c < C; c++) out[h + p][w + p][c] = x[h][w][c];
+  return out;
+}
+
+/** Floor (valid) max pool — an odd trailing row/column is left out of the output. */
 function maxPool(pre: Grid): Grid {
   const H = pre.length;
   const W = pre[0].length;
   const C = pre[0][0].length;
-  const outH = H / POOL;
-  const outW = W / POOL;
+  const outH = Math.floor(H / POOL);
+  const outW = Math.floor(W / POOL);
   const out: Grid = Array.from({ length: outH }, () => Array.from({ length: outW }, () => new Array(C).fill(0)));
   for (let oh = 0; oh < outH; oh++) {
     for (let ow = 0; ow < outW; ow++) {
@@ -142,11 +161,13 @@ export function forwardCnn(weights: CnnWeights, features: Float32Array): CnnForw
   const input = featuresToGrid(features);
   const x: Grid = input.map((row) => row.map((v) => [v]));
 
-  const z1 = convForward(x, weights.conv1.filters, weights.conv1.biases, CONV1_K);
+  const padded1 = padGrid(x, PAD);
+  const z1 = convForward(padded1, weights.conv1.filters, weights.conv1.biases, CONV1_K);
   const a1 = reluGrid(z1);
   const pool1 = maxPool(a1);
 
-  const z2 = convForward(pool1, weights.conv2.filters, weights.conv2.biases, CONV2_K);
+  const padded2 = padGrid(pool1, PAD);
+  const z2 = convForward(padded2, weights.conv2.filters, weights.conv2.biases, CONV2_K);
   const a2 = reluGrid(z2);
   const pool2 = maxPool(a2);
 
@@ -165,7 +186,7 @@ export function forwardCnn(weights: CnnWeights, features: Float32Array): CnnForw
     }
   }
 
-  return { input, conv1: a1, pool1, conv2: a2, pool2, dense1: ad1, logits, probs, predicted };
+  return { input, padded1, conv1: a1, pool1, padded2, conv2: a2, pool2, dense1: ad1, logits, probs, predicted };
 }
 
 export function predictCnn(weights: CnnWeights, point: Point): number {
